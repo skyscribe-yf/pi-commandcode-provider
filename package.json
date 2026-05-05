@@ -11,15 +11,26 @@
   ],
   "license": "MIT",
   "scripts": {
-    "test": "npx tsx tests/test-pure-functions.ts && npx tsx tests/test-abort.ts && npx tsx tests/test-stream.ts",
-    "test:unit": "npx tsx tests/test-pure-functions.ts",
-    "test:abort": "npx tsx tests/test-abort.ts",
-    "test:stream": "npx tsx tests/test-stream.ts",
+    "test": "npm run typecheck && tsx tests/test-pure-functions.ts && tsx tests/test-abort.ts && tsx tests/test-stream.ts && node tests/test-pi-local.mjs",
+    "typecheck": "tsc --noEmit --target ES2022 --module NodeNext --moduleResolution NodeNext --allowImportingTsExtensions --skipLibCheck --types node src/core.ts tests/*.ts",
+    "test:unit": "tsx tests/test-pure-functions.ts",
+    "test:abort": "tsx tests/test-abort.ts",
+    "test:stream": "tsx tests/test-stream.ts",
+    "test:pi-local": "node tests/test-pi-local.mjs",
     "test:smoke": "node tests/test-smoke.mjs"
   },
   "pi": {
     "extensions": [
       "./index.ts"
     ]
+  },
+  "devDependencies": {
+    "@mariozechner/pi-coding-agent": "0.72.0",
+    "@types/node": "25.6.0",
+    "tsx": "4.21.0",
+    "typescript": "6.0.3"
+  },
+  "dependencies": {
+    "@mariozechner/pi-ai": "0.72.0"
   }
 }

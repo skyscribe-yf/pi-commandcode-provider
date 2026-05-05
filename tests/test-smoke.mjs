@@ -4,25 +4,55 @@
  * Tests that the extension:
  * 1. Loads without crashing in print mode
  * 2. Registers the provider and models
- * 3. Can complete a simple query (requires COMMANDCODE_API_KEY)
+ * 3. Can complete a simple prompt (requires Command Code auth)
  *
  * Run with: node tests/test-smoke.mjs
- * Requires: pi on PATH, COMMANDCODE_API_KEY env var set (or test is skipped)
+ * Requires: pi on PATH plus COMMANDCODE_API_KEY or live pi auth files.
  */
 
 import { spawn } from "node:child_process";
-import { resolve, dirname } from "node:path";
+import { accessSync, constants, existsSync } from "node:fs";
+import { homedir } from "node:os";
+import { delimiter, resolve, dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
 const PROJECT_DIR = resolve(__dirname, "..");
 const EXT_PATH = resolve(PROJECT_DIR, "index.ts");
+const TEST_MODEL = "deepseek/deepseek-v4-flash";
+
+function findPiBinary() {
+  if (process.env.PI_BIN) return process.env.PI_BIN;
+  const localBin = resolve(PROJECT_DIR, "node_modules", ".bin");
+  const candidates = (process.env.PATH ?? "")
+    .split(delimiter)
+    .map((entry) => resolve(entry, "pi"))
+    .filter((candidate) => !candidate.startsWith(localBin));
+  for (const candidate of candidates) {
+    try {
+      accessSync(candidate, constants.X_OK);
+      return candidate;
+    } catch {
+      // Try next PATH entry.
+    }
+  }
+  return undefined;
+}
+
+const PI_BIN = findPiBinary();
+const HAS_PI = !!PI_BIN;
 
 const PRINT_MODE_TIMEOUT = 120_000; // 2 minutes for print mode
 const RPC_START_TIMEOUT = 15_000;
 const RPC_QUERY_TIMEOUT = 60_000;
 
-const HAS_API_KEY = !!process.env.COMMANDCODE_API_KEY;
+function hasCommandCodeAuth() {
+  return !!process.env.COMMANDCODE_API_KEY ||
+    existsSync(join(homedir(), ".commandcode", "auth.json")) ||
+    existsSync(join(homedir(), ".pi", "agent", "auth.json"));
+}
+
+const HAS_AUTH = hasCommandCodeAuth();
 
 let passed = 0;
 let failed = 0;
@@ -45,21 +75,25 @@ function kill(child) {
 // -------------------------------------------------------------------------
 
 async function runPrintMode() {
-  if (!HAS_API_KEY) {
-    console.log("[smoke] SKIP — COMMANDCODE_API_KEY not set, skipping print mode test\n");
+  if (!HAS_AUTH) {
+    console.log("[smoke] SKIP — Command Code auth not found, skipping print mode test\n");
+    skipped++;
+    return;
+  }
+  if (!HAS_PI) {
+    console.log("[smoke] SKIP — pi is not on PATH, skipping print mode test\n");
     skipped++;
     return;
   }
 
   console.log(`[smoke] Running pi in print mode with extension: ${EXT_PATH}`);
-  console.log(`[smoke]   pi -e ${EXT_PATH} -p "say hi" --provider commandcode --model claude-sonnet-4-6\n`);
+  console.log(`[smoke]   ${PI_BIN} -e ${EXT_PATH} -p "say hi" --provider commandcode --model ${TEST_MODEL}\n`);
 
-  const child = spawn("pi", [
+  const child = spawn(PI_BIN, [
     "-e", EXT_PATH,
     "-p", "say hi in one word",
     "--provider", "commandcode",
-    "--model", "claude-sonnet-4-6",
-    "--thinking-level", "minimal",
+    "--model", TEST_MODEL,
   ], {
     env: { ...process.env },
     stdio: ["ignore", "pipe", "pipe"],
@@ -101,15 +135,20 @@ async function runPrintMode() {
 // -------------------------------------------------------------------------
 
 async function runListModels() {
-  if (!HAS_API_KEY) {
-    console.log("[smoke] SKIP — no API key, skipping model list test\n");
+  if (!HAS_AUTH) {
+    console.log("[smoke] SKIP — Command Code auth not found, skipping model list test\n");
+    skipped++;
+    return;
+  }
+  if (!HAS_PI) {
+    console.log("[smoke] SKIP — pi is not on PATH, skipping model list test\n");
     skipped++;
     return;
   }
 
   console.log(`[smoke] Checking that models are discoverable via pi --list-models\n`);
 
-  const child = spawn("pi", [
+  const child = spawn(PI_BIN, [
     "-e", EXT_PATH,
     "--list-models",
   ], {
@@ -146,20 +185,25 @@ async function runListModels() {
 }
 
 // -------------------------------------------------------------------------
-// Test 3: RPC mode — extension loads, session starts
+// Test 3: RPC mode — extension loads and answers get_state
 // -------------------------------------------------------------------------
 
 async function runRpcStartup() {
-  if (!HAS_API_KEY) {
-    console.log("[smoke] SKIP — no API key, skipping RPC startup test\n");
+  if (!HAS_AUTH) {
+    console.log("[smoke] SKIP — Command Code auth not found, skipping RPC startup test\n");
+    skipped++;
+    return;
+  }
+  if (!HAS_PI) {
+    console.log("[smoke] SKIP — pi is not on PATH, skipping RPC startup test\n");
     skipped++;
     return;
   }
 
   console.log(`[smoke] Testing RPC mode startup with extension\n`);
-  console.log(`[smoke]   pi --mode rpc -e ${EXT_PATH}\n`);
+  console.log(`[smoke]   ${PI_BIN} --mode rpc -e ${EXT_PATH}\n`);
 
-  const child = spawn("pi", [
+  const child = spawn(PI_BIN, [
     "--mode", "rpc",
     "-e", EXT_PATH,
   ], {
@@ -167,7 +211,7 @@ async function runRpcStartup() {
     stdio: ["pipe", "pipe", "pipe"],
   });
 
-  let sawSessionStart = false;
+  let sawStateResponse = false;
   let sawError = false;
   const events = [];
 
@@ -182,9 +226,9 @@ async function runRpcStartup() {
       try {
         const msg = JSON.parse(trimmed);
         events.push(msg);
-        if (msg.type === "session_start") {
-          sawSessionStart = true;
-          console.log("[smoke] RPC received session_start event");
+        if (msg.type === "response" && msg.id === "state-1" && msg.command === "get_state" && msg.success === true) {
+          sawStateResponse = true;
+          console.log("[smoke] RPC received get_state response");
         }
         if (msg.type === "error" || msg.type === "fatal") {
           sawError = true;
@@ -197,12 +241,14 @@ async function runRpcStartup() {
   });
 
   const result = new Promise((resolve) => {
+    child.stdin.write(JSON.stringify({ id: "state-1", type: "get_state" }) + "\n");
+
     const timer = setTimeout(async () => {
-      if (sawSessionStart) {
-        console.log("[smoke] PASS — extension loaded, session started in RPC mode");
+      if (sawStateResponse) {
+        console.log("[smoke] PASS — extension loaded and RPC get_state works");
         resolve(true);
       } else {
-        console.log("[smoke] FAIL — session_start not received within 5s");
+        console.log("[smoke] FAIL — get_state response not received");
         resolve(false);
       }
       // Send quit
@@ -212,8 +258,8 @@ async function runRpcStartup() {
 
     child.on("close", (code) => {
       clearTimeout(timer);
-      if (!sawSessionStart && !sawError) {
-        console.log(`[smoke] FAIL — pi exited with code ${code} before session_start`);
+      if (!sawStateResponse && !sawError) {
+        console.log(`[smoke] FAIL — pi exited with code ${code} before get_state response`);
         resolve(false);
       }
     });
@@ -225,33 +271,36 @@ async function runRpcStartup() {
 }
 
 // -------------------------------------------------------------------------
-// Test 4: RPC mode — send query and receive assistant message
+// Test 4: RPC mode — send prompt and receive assistant message
 // -------------------------------------------------------------------------
 
 async function runRpcQuery() {
-  if (!HAS_API_KEY) {
-    console.log("[smoke] SKIP — no API key, skipping RPC query test\n");
+  if (!HAS_AUTH) {
+    console.log("[smoke] SKIP — Command Code auth not found, skipping RPC prompt test\n");
+    skipped++;
+    return;
+  }
+  if (!HAS_PI) {
+    console.log("[smoke] SKIP — pi is not on PATH, skipping RPC prompt test\n");
     skipped++;
     return;
   }
 
-  console.log(`[smoke] Testing RPC query flow\n`);
-  console.log(`[smoke]   pi --mode rpc -e ${EXT_PATH} → query "say hi" → expect response\n`);
+  console.log(`[smoke] Testing RPC prompt flow\n`);
+  console.log(`[smoke]   pi --mode rpc -e ${EXT_PATH} → prompt "say hi" → expect response\n`);
 
-  const child = spawn("pi", [
+  const child = spawn(PI_BIN, [
     "--mode", "rpc",
     "-e", EXT_PATH,
     "--provider", "commandcode",
-    "--model", "claude-sonnet-4-6",
-    "--thinking-level", "minimal",
+    "--model", TEST_MODEL,
   ], {
     env: { ...process.env },
     stdio: ["pipe", "pipe", "pipe"],
   });
 
-  let sawSessionStart = false;
+  let sawPromptAccepted = false;
   let sawAssistantMessage = false;
-  let querySent = false;
 
   let buf = "";
   child.stdout.on("data", (chunk) => {
@@ -263,23 +312,12 @@ async function runRpcQuery() {
       if (!trimmed) continue;
       try {
         const msg = JSON.parse(trimmed);
-        if (msg.type === "session_start") {
-          sawSessionStart = true;
-          // Now send a query
-          if (!querySent) {
-            querySent = true;
-            const query = {
-              type: "query",
-              query: "say hi in one word",
-              sessionId: msg.sessionId,
-            };
-            child.stdin.write(JSON.stringify(query) + "\n");
-            console.log("[smoke] Sent RPC query");
-          }
+        if (msg.type === "response" && msg.id === "prompt-1" && msg.command === "prompt" && msg.success === true) {
+          sawPromptAccepted = true;
         }
-        if (msg.type === "assistant_message") {
+        if (msg.type === "message_end" && msg.message?.role === "assistant") {
           sawAssistantMessage = true;
-          console.log("[smoke] PASS — received assistant_message in RPC mode");
+          console.log("[smoke] PASS — received assistant message_end in RPC mode");
         }
       } catch {
         // ignore
@@ -288,12 +326,15 @@ async function runRpcQuery() {
   });
 
   const result = new Promise((resolve) => {
+    child.stdin.write(JSON.stringify({ id: "prompt-1", type: "prompt", message: "say hi in one word" }) + "\n");
+    console.log("[smoke] Sent RPC prompt");
+
     const timer = setTimeout(() => {
-      if (sawAssistantMessage) {
-        console.log("[smoke] PASS — full RPC query/response cycle works");
+      if (sawPromptAccepted && sawAssistantMessage) {
+        console.log("[smoke] PASS — full RPC prompt/response cycle works");
         resolve(true);
       } else {
-        console.log("[smoke] WARN — no assistant_message received (may still be streaming)");
+        console.log("[smoke] WARN — no assistant message_end received (may still be streaming)");
         resolve(false);
       }
       try { child.stdin.write(JSON.stringify({ type: "quit" }) + "\n"); } catch {}
@@ -303,7 +344,7 @@ async function runRpcQuery() {
     child.on("close", (code) => {
       clearTimeout(timer);
       if (!sawAssistantMessage) {
-        console.log(`[smoke] FAIL — pi exited before assistant_message`);
+        console.log(`[smoke] FAIL — pi exited before assistant message_end`);
         resolve(false);
       }
     });
@@ -321,7 +362,7 @@ async function runRpcQuery() {
 console.log("=".repeat(60));
 console.log("  pi-commandcode-provider Integration Smoke Test");
 console.log("=".repeat(60));
-console.log(`  API key: ${HAS_API_KEY ? "✓ found" : "✗ not set (tests will be skipped)"}`);
+console.log(`  Auth: ${HAS_AUTH ? "✓ found" : "✗ not found (tests will be skipped)"}`);
 console.log(`  Extension: ${EXT_PATH}`);
 console.log("=".repeat(60));
 console.log("");
