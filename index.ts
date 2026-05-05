@@ -12,16 +12,13 @@
  * Models: deepseek-v4-pro, deepseek-v4-flash, claude-sonnet-4-6, claude-opus-4-7, etc.
  */
 
-import {
-  calculateCost,
-  createAssistantMessageEventStream,
-} from "@mariozechner/pi-ai";
-import type { ExtensionAPI } from "@mariozechner/pi-coding-agent";
+import { calculateCost, createAssistantMessageEventStream } from "@mariozechner/pi-ai"
+import type { ExtensionAPI } from "@mariozechner/pi-coding-agent"
 
-import { createStreamCommandCode, DEFAULT_API_BASE } from "./src/core.ts";
-import { getApiKey, login, refreshToken } from "./src/oauth.ts";
+import { createStreamCommandCode, DEFAULT_API_BASE } from "./src/core.ts"
+import { getApiKey, login, refreshToken } from "./src/oauth.ts"
 
-const API_BASE = process.env.COMMANDCODE_API_BASE ?? DEFAULT_API_BASE;
+const API_BASE = process.env.COMMANDCODE_API_BASE ?? DEFAULT_API_BASE
 
 // ---------------------------------------------------------------------------
 // Model definitions
@@ -157,13 +154,13 @@ const MODELS = [
     contextWindow: 1_000_000,
     maxTokens: 131_072,
   },
-];
+]
 
 const streamCommandCode = createStreamCommandCode({
   createStream: createAssistantMessageEventStream,
   calculateCost,
   apiBase: API_BASE,
-});
+})
 
 // ---------------------------------------------------------------------------
 // Extension entry point
@@ -196,5 +193,5 @@ export default function (pi: ExtensionAPI) {
       contextWindow: model.contextWindow,
       maxTokens: model.maxTokens,
     })),
-  });
+  })
 }

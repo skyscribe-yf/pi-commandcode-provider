@@ -5,7 +5,7 @@
  * dependencies so tests can exercise the real serialization and stream parser.
  */
 
-import { randomUUID } from "node:crypto";
+import { randomUUID } from "node:crypto"
 
 import {
   getApiKey,
@@ -18,7 +18,7 @@ import {
   recordOrEmpty,
   stringValue,
   toolsToJson,
-} from "./converters.ts";
+} from "./converters.ts"
 import type {
   AssistantMessageEventStreamLike,
   AssistantMessageLike,
@@ -32,12 +32,12 @@ import type {
   TextContent,
   ToolCallContent,
   Usage,
-} from "./types.ts";
+} from "./types.ts"
 
-export * from "./converters.ts";
-export * from "./types.ts";
+export * from "./converters.ts"
+export * from "./types.ts"
 
-export const DEFAULT_API_BASE = "https://api.commandcode.ai";
+export const DEFAULT_API_BASE = "https://api.commandcode.ai"
 
 function defaultUsage(): Usage {
   return {
@@ -47,64 +47,60 @@ function defaultUsage(): Usage {
     cacheWrite: 0,
     totalTokens: 0,
     cost: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0, total: 0 },
-  };
+  }
 }
 
-function commandCodeUsage(
-  event: Record<string, unknown>,
-): Record<string, unknown> | undefined {
-  return isRecord(event.totalUsage) ? event.totalUsage : undefined;
+function commandCodeUsage(event: Record<string, unknown>): Record<string, unknown> | undefined {
+  return isRecord(event.totalUsage) ? event.totalUsage : undefined
 }
 
 function commandCodeInputTokenDetails(
   usage: Record<string, unknown>,
 ): Record<string, unknown> | undefined {
-  return isRecord(usage.inputTokenDetails)
-    ? usage.inputTokenDetails
-    : undefined;
+  return isRecord(usage.inputTokenDetails) ? usage.inputTokenDetails : undefined
 }
 
 function headersToRecord(headers: Headers): Record<string, string> {
-  const out: Record<string, string> = {};
+  const out: Record<string, string> = {}
   headers.forEach((value, key) => {
-    out[key] = value;
-  });
-  return out;
+    out[key] = value
+  })
+  return out
 }
 
 function abortError(message = "The operation was aborted"): DOMException {
-  return new DOMException(message, "AbortError");
+  return new DOMException(message, "AbortError")
 }
 
 function successStopReason(reason: TerminalReason): StopReason {
-  if (reason === "length" || reason === "toolUse") return reason;
-  return "stop";
+  if (reason === "length" || reason === "toolUse") return reason
+  return "stop"
 }
 
 export function createStreamCommandCode(deps: CoreDependencies) {
-  const apiBase = deps.apiBase ?? DEFAULT_API_BASE;
-  const fetchImpl = deps.fetchImpl ?? fetch;
-  const cwd = deps.cwd ?? (() => process.cwd());
-  const now = deps.now ?? (() => Date.now());
-  const uuid = deps.uuid ?? (() => randomUUID());
+  const apiBase = deps.apiBase ?? DEFAULT_API_BASE
+  const fetchImpl = deps.fetchImpl ?? fetch
+  const cwd = deps.cwd ?? (() => process.cwd())
+  const now = deps.now ?? (() => Date.now())
+  const uuid = deps.uuid ?? (() => randomUUID())
 
   function raceAbort<T>(promise: Promise<T>, signal: AbortSignal): Promise<T> {
-    if (signal.aborted) return Promise.reject(abortError());
+    if (signal.aborted) return Promise.reject(abortError())
 
     return new Promise<T>((resolve, reject) => {
-      const onAbort = () => reject(abortError());
-      signal.addEventListener("abort", onAbort, { once: true });
+      const onAbort = () => reject(abortError())
+      signal.addEventListener("abort", onAbort, { once: true })
       promise.then(
         (value) => {
-          signal.removeEventListener("abort", onAbort);
-          resolve(value);
+          signal.removeEventListener("abort", onAbort)
+          resolve(value)
         },
         (error: unknown) => {
-          signal.removeEventListener("abort", onAbort);
-          reject(error);
+          signal.removeEventListener("abort", onAbort)
+          reject(error)
         },
-      );
-    });
+      )
+    })
   }
 
   return function streamCommandCode(
@@ -112,7 +108,7 @@ export function createStreamCommandCode(deps: CoreDependencies) {
     context: ContextLike,
     options?: StreamOptions,
   ): AssistantMessageEventStreamLike {
-    const stream = deps.createStream();
+    const stream = deps.createStream()
 
     async function run() {
       const apiKey =
@@ -121,7 +117,7 @@ export function createStreamCommandCode(deps: CoreDependencies) {
           env: deps.env,
           authPaths: deps.authPaths,
           homeDir: deps.homeDir,
-        });
+        })
 
       if (!apiKey) {
         const msg: AssistantMessageLike = {
@@ -135,10 +131,10 @@ export function createStreamCommandCode(deps: CoreDependencies) {
           errorMessage:
             "No Command Code API key. Run /login commandcode, set COMMANDCODE_API_KEY env var, or configure ~/.commandcode/auth.json or ~/.pi/agent/auth.json.",
           timestamp: now(),
-        };
-        stream.push({ type: "error", reason: "error", error: msg });
-        stream.end();
-        return;
+        }
+        stream.push({ type: "error", reason: "error", error: msg })
+        stream.end()
+        return
       }
 
       const output: AssistantMessageLike = {
@@ -150,168 +146,162 @@ export function createStreamCommandCode(deps: CoreDependencies) {
         usage: defaultUsage(),
         stopReason: "stop",
         timestamp: now(),
-      };
+      }
 
-      const controller = new AbortController();
-      let reader: ReadableStreamDefaultReader<Uint8Array> | undefined;
-      let textBlock: TextContent | undefined;
-      let currentTextIdx = -1;
-      let thinkingBlock: string[] = [];
-      let finished = false;
+      const controller = new AbortController()
+      let reader: ReadableStreamDefaultReader<Uint8Array> | undefined
+      let textBlock: TextContent | undefined
+      let currentTextIdx = -1
+      let thinkingBlock: string[] = []
+      let finished = false
 
       const abortUpstream = () => {
-        if (!controller.signal.aborted) controller.abort();
+        if (!controller.signal.aborted) controller.abort()
         try {
-          reader?.cancel().catch(() => undefined);
+          reader?.cancel().catch(() => undefined)
         } catch {
           // Reader cancellation is best-effort.
         }
-      };
+      }
 
       if (options?.signal?.aborted) {
-        abortUpstream();
+        abortUpstream()
       } else {
         options?.signal?.addEventListener("abort", abortUpstream, {
           once: true,
-        });
+        })
       }
 
       const endTextBlock = () => {
-        if (!textBlock) return;
+        if (!textBlock) return
         stream.push({
           type: "text_end",
           contentIndex: currentTextIdx,
           content: textBlock.text,
           partial: output,
-        });
-        textBlock = undefined;
-        currentTextIdx = -1;
-      };
+        })
+        textBlock = undefined
+        currentTextIdx = -1
+      }
 
       const flushThinkingBlock = () => {
-        if (thinkingBlock.length === 0) return;
-        const thinkingText = thinkingBlock.join("");
-        thinkingBlock = [];
-        output.content.push({ type: "thinking", thinking: thinkingText });
-        const idx = output.content.length - 1;
+        if (thinkingBlock.length === 0) return
+        const thinkingText = thinkingBlock.join("")
+        thinkingBlock = []
+        output.content.push({ type: "thinking", thinking: thinkingText })
+        const idx = output.content.length - 1
         stream.push({
           type: "thinking_start",
           contentIndex: idx,
           partial: output,
-        });
+        })
         stream.push({
           type: "thinking_delta",
           contentIndex: idx,
           delta: thinkingText,
           partial: output,
-        });
+        })
         stream.push({
           type: "thinking_end",
           contentIndex: idx,
           content: thinkingText,
           partial: output,
-        });
-      };
+        })
+      }
 
       const handleEvent = (event: unknown) => {
-        if (!isRecord(event)) return;
+        if (!isRecord(event)) return
 
         switch (event.type) {
           case "text-delta": {
             if (!textBlock) {
-              textBlock = { type: "text", text: "" };
-              output.content.push(textBlock);
-              currentTextIdx = output.content.length - 1;
+              textBlock = { type: "text", text: "" }
+              output.content.push(textBlock)
+              currentTextIdx = output.content.length - 1
               stream.push({
                 type: "text_start",
                 contentIndex: currentTextIdx,
                 partial: output,
-              });
+              })
             }
-            const delta = stringValue(event.text) ?? "";
-            textBlock.text += delta;
+            const delta = stringValue(event.text) ?? ""
+            textBlock.text += delta
             stream.push({
               type: "text_delta",
               contentIndex: currentTextIdx,
               delta,
               partial: output,
-            });
-            break;
+            })
+            break
           }
 
           case "reasoning-delta": {
-            thinkingBlock.push(stringValue(event.text) ?? "");
-            break;
+            thinkingBlock.push(stringValue(event.text) ?? "")
+            break
           }
 
           case "reasoning-end": {
-            flushThinkingBlock();
-            break;
+            flushThinkingBlock()
+            break
           }
 
           case "tool-call": {
-            endTextBlock();
+            endTextBlock()
             const toolCall: ToolCallContent = {
               type: "toolCall",
               id: stringValue(event.toolCallId) ?? "",
               name: stringValue(event.toolName) ?? "",
-              arguments: recordOrEmpty(
-                event.input ?? event.args ?? event.arguments,
-              ),
-            };
-            output.content.push(toolCall);
-            const idx = output.content.length - 1;
+              arguments: recordOrEmpty(event.input ?? event.args ?? event.arguments),
+            }
+            output.content.push(toolCall)
+            const idx = output.content.length - 1
             stream.push({
               type: "toolcall_start",
               contentIndex: idx,
               partial: output,
-            });
+            })
             stream.push({
               type: "toolcall_end",
               contentIndex: idx,
               toolCall,
               partial: output,
-            });
-            break;
+            })
+            break
           }
 
           case "finish": {
-            const usage = commandCodeUsage(event);
+            const usage = commandCodeUsage(event)
             if (usage) {
-              const details = commandCodeInputTokenDetails(usage);
-              output.usage.input = numberValue(usage.inputTokens) ?? 0;
-              output.usage.output = numberValue(usage.outputTokens) ?? 0;
-              output.usage.cacheRead =
-                numberValue(details?.cacheReadTokens) ?? 0;
-              output.usage.cacheWrite =
-                numberValue(details?.cacheWriteTokens) ?? 0;
+              const details = commandCodeInputTokenDetails(usage)
+              output.usage.input = numberValue(usage.inputTokens) ?? 0
+              output.usage.output = numberValue(usage.outputTokens) ?? 0
+              output.usage.cacheRead = numberValue(details?.cacheReadTokens) ?? 0
+              output.usage.cacheWrite = numberValue(details?.cacheWriteTokens) ?? 0
               output.usage.totalTokens =
                 output.usage.input +
                 output.usage.output +
                 output.usage.cacheRead +
-                output.usage.cacheWrite;
-              deps.calculateCost(model, output.usage);
+                output.usage.cacheWrite
+              deps.calculateCost(model, output.usage)
             }
-            output.stopReason = mapFinishReason(event.finishReason);
-            finished = true;
-            break;
+            output.stopReason = mapFinishReason(event.finishReason)
+            finished = true
+            break
           }
 
           case "error": {
-            const errorRecord = isRecord(event.error) ? event.error : undefined;
+            const errorRecord = isRecord(event.error) ? event.error : undefined
             const message =
-              stringValue(errorRecord?.message) ??
-              stringValue(event.error) ??
-              "Stream error";
-            output.stopReason = "error";
-            output.errorMessage = message;
-            throw new Error(message);
+              stringValue(errorRecord?.message) ?? stringValue(event.error) ?? "Stream error"
+            output.stopReason = "error"
+            output.errorMessage = message
+            throw new Error(message)
           }
         }
-      };
+      }
 
       try {
-        stream.push({ type: "start", partial: output });
+        stream.push({ type: "start", partial: output })
 
         let body: unknown = {
           config: {
@@ -334,19 +324,16 @@ export function createStreamCommandCode(deps: CoreDependencies) {
             messages: messagesToCC(context.messages),
             tools: toolsToJson(context.tools),
             system: context.systemPrompt ?? "",
-            max_tokens: Math.min(
-              options?.maxTokens ?? model.maxTokens,
-              200_000,
-            ),
+            max_tokens: Math.min(options?.maxTokens ?? model.maxTokens, 200_000),
             stream: true,
           },
-        };
+        }
 
         const nextBody = await raceAbort(
           Promise.resolve(options?.onPayload?.(body, model)),
           controller.signal,
-        );
-        if (nextBody !== undefined) body = nextBody;
+        )
+        if (nextBody !== undefined) body = nextBody
 
         const response = await raceAbort(
           fetchImpl(`${apiBase}/alpha/generate`, {
@@ -366,7 +353,7 @@ export function createStreamCommandCode(deps: CoreDependencies) {
             signal: controller.signal,
           }),
           controller.signal,
-        );
+        )
 
         await raceAbort(
           Promise.resolve(
@@ -379,78 +366,71 @@ export function createStreamCommandCode(deps: CoreDependencies) {
             ),
           ),
           controller.signal,
-        );
+        )
 
         if (!response.ok) {
           const errBody = await raceAbort(
             response.text().catch(() => ""),
             controller.signal,
-          );
-          throw new Error(
-            `Command Code API error ${response.status}: ${errBody.slice(0, 500)}`,
-          );
+          )
+          throw new Error(`Command Code API error ${response.status}: ${errBody.slice(0, 500)}`)
         }
 
-        reader = response.body?.getReader();
-        if (!reader) throw new Error("No response body");
+        reader = response.body?.getReader()
+        if (!reader) throw new Error("No response body")
 
-        const decoder = new TextDecoder();
-        let buffer = "";
+        const decoder = new TextDecoder()
+        let buffer = ""
 
         readLoop: for (;;) {
-          if (controller.signal.aborted) throw abortError("Aborted");
-          const { done, value } = await raceAbort(
-            reader.read(),
-            controller.signal,
-          );
+          if (controller.signal.aborted) throw abortError("Aborted")
+          const { done, value } = await raceAbort(reader.read(), controller.signal)
           if (done) {
-            if (buffer.trim()) handleEvent(parseStreamEventLine(buffer));
-            break;
+            if (buffer.trim()) handleEvent(parseStreamEventLine(buffer))
+            break
           }
-          if (controller.signal.aborted) throw abortError("Aborted");
+          if (controller.signal.aborted) throw abortError("Aborted")
 
-          buffer += decoder.decode(value, { stream: true });
-          const lines = buffer.split("\n");
-          buffer = lines.pop() ?? "";
+          buffer += decoder.decode(value, { stream: true })
+          const lines = buffer.split("\n")
+          buffer = lines.pop() ?? ""
 
           for (const line of lines) {
-            if (controller.signal.aborted) throw abortError("Aborted");
-            handleEvent(parseStreamEventLine(line));
-            if (finished) break readLoop;
+            if (controller.signal.aborted) throw abortError("Aborted")
+            handleEvent(parseStreamEventLine(line))
+            if (finished) break readLoop
           }
         }
 
-        endTextBlock();
-        flushThinkingBlock();
+        endTextBlock()
+        flushThinkingBlock()
 
         stream.push({
           type: "done",
           reason: successStopReason(output.stopReason),
           message: output,
-        });
-        stream.end();
+        })
+        stream.end()
       } catch (error: unknown) {
-        const reason: ErrorReason = controller.signal.aborted
-          ? "aborted"
-          : "error";
-        output.stopReason = reason;
+        const reason: ErrorReason = controller.signal.aborted ? "aborted" : "error"
+        output.stopReason = reason
         output.errorMessage =
           reason === "aborted"
             ? "Request aborted"
             : error instanceof Error
               ? error.message
-              : String(error);
-        stream.push({ type: "error", reason, error: output });
-        stream.end();
+              : String(error)
+        stream.push({ type: "error", reason, error: output })
+        stream.end()
       } finally {
-        options?.signal?.removeEventListener("abort", abortUpstream);
+        options?.signal?.removeEventListener("abort", abortUpstream)
         try {
-          await reader?.cancel();
+          await reader?.cancel()
         } catch {
           // Reader may already be closed/cancelled.
         }
         try {
-          reader?.releaseLock();
+          reader?.releaseLock()
         } catch {
           // Reader may already be released/cancelled by the abort path.
         }
@@ -468,11 +448,11 @@ export function createStreamCommandCode(deps: CoreDependencies) {
         stopReason: "error",
         errorMessage: error instanceof Error ? error.message : String(error),
         timestamp: now(),
-      };
-      stream.push({ type: "error", reason: "error", error: msg });
-      stream.end();
-    });
+      }
+      stream.push({ type: "error", reason: "error", error: msg })
+      stream.end()
+    })
 
-    return stream;
-  };
+    return stream
+  }
 }

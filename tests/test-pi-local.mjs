@@ -4,8 +4,8 @@
  * Command Code API is replaced by a deterministic local mock server.
  */
 
-import assert from "node:assert/strict";
-import { spawn, spawnSync } from "node:child_process";
+import assert from "node:assert/strict"
+import { spawn, spawnSync } from "node:child_process"
 import {
   accessSync,
   constants,
@@ -14,123 +14,118 @@ import {
   mkdtempSync,
   rmSync,
   writeFileSync,
-} from "node:fs";
-import { createServer } from "node:http";
-import { homedir, tmpdir } from "node:os";
-import { delimiter, dirname, join, resolve } from "node:path";
-import { fileURLToPath } from "node:url";
+} from "node:fs"
+import { createServer } from "node:http"
+import { homedir, tmpdir } from "node:os"
+import { delimiter, dirname, join, resolve } from "node:path"
+import { fileURLToPath } from "node:url"
 
-const __dirname = dirname(fileURLToPath(import.meta.url));
-const PROJECT_DIR = resolve(__dirname, "..");
-const EXT_PATH = resolve(PROJECT_DIR, "index.ts");
-const TEST_MODEL = "deepseek/deepseek-v4-flash";
+const __dirname = dirname(fileURLToPath(import.meta.url))
+const PROJECT_DIR = resolve(__dirname, "..")
+const EXT_PATH = resolve(PROJECT_DIR, "index.ts")
+const TEST_MODEL = "deepseek/deepseek-v4-flash"
 
 function findPiBinary() {
-  if (process.env.PI_BIN) return process.env.PI_BIN;
-  const localBin = resolve(PROJECT_DIR, "node_modules", ".bin");
+  if (process.env.PI_BIN) return process.env.PI_BIN
+  const localBin = resolve(PROJECT_DIR, "node_modules", ".bin")
   const candidates = (process.env.PATH ?? "")
     .split(delimiter)
     .map((entry) => resolve(entry, "pi"))
-    .filter((candidate) => !candidate.startsWith(localBin));
+    .filter((candidate) => !candidate.startsWith(localBin))
   for (const candidate of candidates) {
     try {
-      accessSync(candidate, constants.X_OK);
-      return candidate;
+      accessSync(candidate, constants.X_OK)
+      return candidate
     } catch {
       // Try next PATH entry.
     }
   }
-  return undefined;
+  return undefined
 }
 
-const PI_BIN = findPiBinary();
+const PI_BIN = findPiBinary()
 if (!PI_BIN) {
-  console.log("[pi-local] SKIP — pi is not on PATH");
-  process.exit(0);
+  console.log("[pi-local] SKIP — pi is not on PATH")
+  process.exit(0)
 }
 
-const piCheck = spawnSync(PI_BIN, ["--help"], { stdio: "ignore" });
+const piCheck = spawnSync(PI_BIN, ["--help"], { stdio: "ignore" })
 if (piCheck.error) {
-  console.log(`[pi-local] SKIP — pi failed to start: ${piCheck.error.message}`);
-  process.exit(0);
+  console.log(`[pi-local] SKIP — pi failed to start: ${piCheck.error.message}`)
+  process.exit(0)
 }
 
-let requestCount = 0;
-let lastRequestBody;
-let lastRequestHeaders = {};
+let requestCount = 0
+let lastRequestBody
+let lastRequestHeaders = {}
 
 const server = createServer((req, res) => {
   if (req.method !== "POST" || req.url !== "/alpha/generate") {
-    res.writeHead(404);
-    res.end("Not found");
-    return;
+    res.writeHead(404)
+    res.end("Not found")
+    return
   }
 
-  requestCount += 1;
+  requestCount += 1
   lastRequestHeaders = Object.fromEntries(
     Object.entries(req.headers).map(([key, value]) => [
       key,
       Array.isArray(value) ? value.join(", ") : (value ?? ""),
     ]),
-  );
+  )
 
-  let body = "";
+  let body = ""
   req.on("data", (chunk) => {
-    body += chunk.toString("utf-8");
-  });
+    body += chunk.toString("utf-8")
+  })
   req.on("end", () => {
     try {
-      lastRequestBody = JSON.parse(body);
+      lastRequestBody = JSON.parse(body)
     } catch {
-      lastRequestBody = undefined;
+      lastRequestBody = undefined
     }
 
     res.writeHead(200, {
       "Content-Type": "text/plain; charset=utf-8",
       "Transfer-Encoding": "chunked",
-    });
-    res.write(
-      `${JSON.stringify({ type: "text-delta", text: "mock-pi-ok" })}\n`,
-    );
+    })
+    res.write(`${JSON.stringify({ type: "text-delta", text: "mock-pi-ok" })}\n`)
     res.write(
       `${JSON.stringify({ type: "finish", finishReason: "stop", totalUsage: { inputTokens: 1, outputTokens: 1 } })}\n`,
-    );
-    res.end();
-  });
-});
+    )
+    res.end()
+  })
+})
 
-await new Promise((resolve) => server.listen(0, resolve));
-const address = server.address();
-const port = typeof address === "object" && address ? address.port : 0;
-const apiBase = `http://127.0.0.1:${port}`;
+await new Promise((resolve) => server.listen(0, resolve))
+const address = server.address()
+const port = typeof address === "object" && address ? address.port : 0
+const apiBase = `http://127.0.0.1:${port}`
 
 function hasLivePiAuth() {
   return (
     !!process.env.COMMANDCODE_API_KEY ||
     existsSync(join(homedir(), ".commandcode", "auth.json")) ||
     existsSync(join(homedir(), ".pi", "agent", "auth.json"))
-  );
+  )
 }
 
-let tempHome;
+let tempHome
 const env = {
   ...process.env,
   COMMANDCODE_API_BASE: apiBase,
-};
+}
 
 if (hasLivePiAuth()) {
-  console.log("[pi-local] using live pi auth");
+  console.log("[pi-local] using live pi auth")
 } else {
-  console.log("[pi-local] live pi auth not found; using mock auth fallback");
-  tempHome = mkdtempSync(join(tmpdir(), "pi-cc-home-"));
-  mkdirSync(join(tempHome, ".commandcode"), { recursive: true });
-  writeFileSync(
-    join(tempHome, ".commandcode", "auth.json"),
-    JSON.stringify({ apiKey: "mock-key" }),
-  );
-  env.HOME = tempHome;
-  env.USERPROFILE = tempHome;
-  env.COMMANDCODE_API_KEY = "mock-key";
+  console.log("[pi-local] live pi auth not found; using mock auth fallback")
+  tempHome = mkdtempSync(join(tmpdir(), "pi-cc-home-"))
+  mkdirSync(join(tempHome, ".commandcode"), { recursive: true })
+  writeFileSync(join(tempHome, ".commandcode", "auth.json"), JSON.stringify({ apiKey: "mock-key" }))
+  env.HOME = tempHome
+  env.USERPROFILE = tempHome
+  env.COMMANDCODE_API_KEY = "mock-key"
 }
 
 function runPi(args, timeoutMs = 30_000) {
@@ -139,125 +134,109 @@ function runPi(args, timeoutMs = 30_000) {
       cwd: PROJECT_DIR,
       env,
       stdio: ["ignore", "pipe", "pipe"],
-    });
-    let stdout = "";
-    let stderr = "";
+    })
+    let stdout = ""
+    let stderr = ""
     const timer = setTimeout(() => {
-      child.kill();
+      child.kill()
       resolve({
         code: -1,
         stdout,
         stderr: `${stderr}\nTIMEOUT after ${timeoutMs}ms`,
-      });
-    }, timeoutMs);
+      })
+    }, timeoutMs)
     child.stdout.on("data", (chunk) => {
-      stdout += chunk.toString("utf-8");
-    });
+      stdout += chunk.toString("utf-8")
+    })
     child.stderr.on("data", (chunk) => {
-      stderr += chunk.toString("utf-8");
-    });
+      stderr += chunk.toString("utf-8")
+    })
     child.on("close", (code) => {
-      clearTimeout(timer);
-      resolve({ code, stdout, stderr });
-    });
-  });
+      clearTimeout(timer)
+      resolve({ code, stdout, stderr })
+    })
+  })
 }
 
 async function runRpcQuery(timeoutMs = 30_000) {
   const child = spawn(
     PI_BIN,
-    [
-      "--mode",
-      "rpc",
-      "-e",
-      EXT_PATH,
-      "--provider",
-      "commandcode",
-      "--model",
-      TEST_MODEL,
-    ],
+    ["--mode", "rpc", "-e", EXT_PATH, "--provider", "commandcode", "--model", TEST_MODEL],
     {
       cwd: PROJECT_DIR,
       env,
       stdio: ["pipe", "pipe", "pipe"],
     },
-  );
+  )
 
-  let stdout = "";
-  let stderr = "";
-  let buffer = "";
-  let sawPromptAccepted = false;
-  let sawAssistantMessage = false;
-  let sawTextDelta = false;
-  const events = [];
+  let stdout = ""
+  let stderr = ""
+  let buffer = ""
+  let sawPromptAccepted = false
+  let sawAssistantMessage = false
+  let sawTextDelta = false
+  const events = []
 
   const done = new Promise((resolve) => {
     const timer = setTimeout(() => {
-      child.kill();
-      resolve(false);
-    }, timeoutMs);
+      child.kill()
+      resolve(false)
+    }, timeoutMs)
 
     const finish = (ok) => {
-      clearTimeout(timer);
+      clearTimeout(timer)
       try {
-        child.stdin.write(`${JSON.stringify({ type: "quit" })}\n`);
+        child.stdin.write(`${JSON.stringify({ type: "quit" })}\n`)
       } catch {
         // ignore shutdown race
       }
-      child.kill();
-      resolve(ok);
-    };
+      child.kill()
+      resolve(ok)
+    }
 
     child.stdin.write(
       `${JSON.stringify({ id: "prompt-1", type: "prompt", message: "say mock token" })}\n`,
-    );
+    )
 
     child.stdout.on("data", (chunk) => {
-      const text = chunk.toString("utf-8");
-      stdout += text;
-      buffer += text;
-      const lines = buffer.split("\n");
-      buffer = lines.pop() ?? "";
+      const text = chunk.toString("utf-8")
+      stdout += text
+      buffer += text
+      const lines = buffer.split("\n")
+      buffer = lines.pop() ?? ""
       for (const line of lines) {
-        const trimmed = line.trim();
-        if (!trimmed) continue;
+        const trimmed = line.trim()
+        if (!trimmed) continue
         try {
-          const event = JSON.parse(trimmed);
-          events.push(event);
-          if (
-            event.type === "response" &&
-            event.id === "prompt-1" &&
-            event.success === true
-          ) {
-            sawPromptAccepted = true;
+          const event = JSON.parse(trimmed)
+          events.push(event)
+          if (event.type === "response" && event.id === "prompt-1" && event.success === true) {
+            sawPromptAccepted = true
           }
           if (
             event.type === "message_update" &&
             event.assistantMessageEvent?.type === "text_delta"
           ) {
-            sawTextDelta = true;
+            sawTextDelta = true
           }
-          if (
-            event.type === "message_end" &&
-            event.message?.role === "assistant"
-          ) {
-            sawAssistantMessage = true;
-            finish(true);
+          if (event.type === "message_end" && event.message?.role === "assistant") {
+            sawAssistantMessage = true
+            finish(true)
           }
         } catch {
           // ignore non-JSON output
         }
       }
-    });
+    })
     child.stderr.on("data", (chunk) => {
-      stderr += chunk.toString("utf-8");
-    });
+      stderr += chunk.toString("utf-8")
+    })
     child.on("close", () => {
-      if (!sawAssistantMessage) finish(false);
-    });
-  });
+      if (!sawAssistantMessage) finish(false)
+    })
+  })
 
-  const ok = await done;
+  const ok = await done
   return {
     ok,
     stdout,
@@ -266,44 +245,35 @@ async function runRpcQuery(timeoutMs = 30_000) {
     sawPromptAccepted,
     sawAssistantMessage,
     sawTextDelta,
-  };
+  }
 }
 
 try {
-  console.log("[pi-local] list models through real extension");
-  const list = await runPi(["-e", EXT_PATH, "--list-models"], 20_000);
-  assert.equal(list.code, 0, list.stderr);
-  assert.match(list.stdout, /commandcode/);
-  assert.match(list.stdout, /deepseek\/deepseek-v4-flash/);
+  console.log("[pi-local] list models through real extension")
+  const list = await runPi(["-e", EXT_PATH, "--list-models"], 20_000)
+  assert.equal(list.code, 0, list.stderr)
+  assert.match(list.stdout, /commandcode/)
+  assert.match(list.stdout, /deepseek\/deepseek-v4-flash/)
 
-  console.log("[pi-local] print mode through real extension and mock API");
-  requestCount = 0;
+  console.log("[pi-local] print mode through real extension and mock API")
+  requestCount = 0
   const print = await runPi(
-    [
-      "-e",
-      EXT_PATH,
-      "-p",
-      "say mock token",
-      "--provider",
-      "commandcode",
-      "--model",
-      TEST_MODEL,
-    ],
+    ["-e", EXT_PATH, "-p", "say mock token", "--provider", "commandcode", "--model", TEST_MODEL],
     30_000,
-  );
-  assert.equal(print.code, 0, print.stderr);
-  assert.match(print.stdout, /mock-pi-ok/);
-  assert.equal(requestCount, 1);
+  )
+  assert.equal(print.code, 0, print.stderr)
+  assert.match(print.stdout, /mock-pi-ok/)
+  assert.equal(requestCount, 1)
   assert.ok(
     typeof lastRequestHeaders.authorization === "string" &&
       lastRequestHeaders.authorization.startsWith("Bearer "),
     "should send a bearer Authorization header",
-  );
-  assert.equal(lastRequestBody?.params?.model, TEST_MODEL);
+  )
+  assert.equal(lastRequestBody?.params?.model, TEST_MODEL)
 
-  console.log("[pi-local] RPC prompt through real extension and mock API");
-  requestCount = 0;
-  const rpc = await runRpcQuery();
+  console.log("[pi-local] RPC prompt through real extension and mock API")
+  requestCount = 0
+  const rpc = await runRpcQuery()
   assert.equal(
     rpc.ok,
     true,
@@ -312,14 +282,14 @@ try {
       null,
       2,
     ),
-  );
-  assert.equal(rpc.sawPromptAccepted, true);
-  assert.equal(rpc.sawAssistantMessage, true);
-  assert.equal(rpc.sawTextDelta, true);
-  assert.equal(requestCount, 1);
+  )
+  assert.equal(rpc.sawPromptAccepted, true)
+  assert.equal(rpc.sawAssistantMessage, true)
+  assert.equal(rpc.sawTextDelta, true)
+  assert.equal(requestCount, 1)
 
-  console.log("[pi-local] PASS");
+  console.log("[pi-local] PASS")
 } finally {
-  await new Promise((resolve) => server.close(resolve));
-  if (tempHome) rmSync(tempHome, { recursive: true, force: true });
+  await new Promise((resolve) => server.close(resolve))
+  if (tempHome) rmSync(tempHome, { recursive: true, force: true })
 }
