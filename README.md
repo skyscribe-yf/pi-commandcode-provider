@@ -6,17 +6,17 @@ A [pi](https://github.com/badlogic/pi-mono) custom provider that connects pi to 
 
 > **Note:** This package only provides a model _provider_. It does **not** include an API key. You must bring your own Command Code API key or subscription.
 
-> 💰 **Current offer:** Command Code offers [4× usage of DeepSeek V4](https://commandcode.ai/docs/resources/pricing-limits#deepseek-v4-pro-4x-usage) (Pro and Flash) at no extra cost.
+> 💰 **Current offers:** Command Code offers [4× usage of DeepSeek V4 Pro](https://commandcode.ai/docs/resources/pricing-limits#deepseek-v4-pro-4x-usage) and [2× usage of Qwen 3.7 Max](https://commandcode.ai/docs/resources/pricing-limits#qwen-3.7-max-2x-usage).
 
 ## Models
 
-18 models across premium and open-source providers:
+Models are fetched live from Command Code's Provider API at startup, so new models like Qwen 3.7 Max show up without a package release.
 
-| Category        | Models                                                                                                                                         |
-| --------------- | ---------------------------------------------------------------------------------------------------------------------------------------------- |
-| **Anthropic**   | Claude Opus 4.7, Claude Opus 4.6, Claude Sonnet 4.6, Claude Haiku 4.5                                                                          |
-| **OpenAI**      | GPT-5.5, GPT-5.4, GPT-5.3 Codex, GPT-5.4 Mini                                                                                                  |
-| **Open-source** | DeepSeek V4, DeepSeek V4 Pro, DeepSeek V4 Flash, Kimi K2.6, Kimi K2.5, GLM-5.1, GLM-5, MiniMax M2.7, MiniMax M2.5, Qwen 3.6 Max, Qwen 3.6 Plus |
+You can list the current Command Code models with:
+
+```sh
+pi -e index.ts --list-models
+```
 
 ## Install
 
@@ -88,17 +88,21 @@ After installing and setting your API key, select a Command Code model in pi:
 /model deepseek/deepseek-v4-flash
 ```
 
-Any query will then use the Command Code API. You can list available models:
-
-```sh
-pi -e index.ts --list-models
-```
-
-Or within pi:
+Any query will then use the Command Code API. You can list available models within pi:
 
 ```txt
 /models
 ```
+
+## Model discovery
+
+On startup, the provider fetches:
+
+```txt
+https://api.commandcode.ai/provider/v1/models
+```
+
+For tests or local mocks, override it with `COMMANDCODE_MODELS_URL`.
 
 ## Publish
 
