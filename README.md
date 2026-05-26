@@ -115,12 +115,13 @@ https://api.commandcode.ai/provider/v1/models
 
 For tests or local mocks, override it with `COMMANDCODE_MODELS_URL`.
 
-## Publish
+## Contributing
 
-```sh
-npm login
-npm publish --access public
-```
+See [CONTRIBUTING.md](CONTRIBUTING.md) for development setup, PR expectations, and commit message rules.
+
+## Release
+
+See [RELEASE.md](RELEASE.md) for the prerelease, npm smoke-test, stable publish, git tag, and GitHub follow-up checklist.
 
 ## License
 

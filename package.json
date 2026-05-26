@@ -23,6 +23,8 @@
     "src/",
     "README.md",
     "CHANGELOG.md",
+    "CONTRIBUTING.md",
+    "RELEASE.md",
     "LICENSE"
   ],
   "scripts": {
