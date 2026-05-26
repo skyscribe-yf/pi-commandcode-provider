@@ -56,10 +56,40 @@ if (piCheck.error) {
 }
 
 let requestCount = 0
+let modelListRequestCount = 0
 let lastRequestBody
 let lastRequestHeaders = {}
 
 const server = createServer((req, res) => {
+  if (req.method === "GET" && req.url === "/provider/v1/models") {
+    modelListRequestCount += 1
+    res.writeHead(200, { "Content-Type": "application/json; charset=utf-8" })
+    res.end(
+      JSON.stringify({
+        object: "list",
+        data: [
+          {
+            id: TEST_MODEL,
+            object: "model",
+            created: 1779824324,
+            owned_by: "command-code",
+            name: "DeepSeek V4 Flash",
+            context_length: 1_000_000,
+          },
+          {
+            id: "Qwen/Qwen3.7-Max",
+            object: "model",
+            created: 1779824324,
+            owned_by: "command-code",
+            name: "Qwen 3.7 Max",
+            context_length: 1_000_000,
+          },
+        ],
+      }),
+    )
+    return
+  }
+
   if (req.method !== "POST" || req.url !== "/alpha/generate") {
     res.writeHead(404)
     res.end("Not found")
@@ -114,6 +144,7 @@ let tempHome
 const env = {
   ...process.env,
   COMMANDCODE_API_BASE: apiBase,
+  COMMANDCODE_MODELS_URL: `${apiBase}/provider/v1/models`,
 }
 
 if (hasLivePiAuth()) {
@@ -161,7 +192,17 @@ function runPi(args, timeoutMs = 30_000) {
 async function runRpcQuery(timeoutMs = 30_000) {
   const child = spawn(
     PI_BIN,
-    ["--mode", "rpc", "-e", EXT_PATH, "--provider", "commandcode", "--model", TEST_MODEL],
+    [
+      "--no-extensions",
+      "--mode",
+      "rpc",
+      "-e",
+      EXT_PATH,
+      "--provider",
+      "commandcode",
+      "--model",
+      TEST_MODEL,
+    ],
     {
       cwd: PROJECT_DIR,
       env,
@@ -250,15 +291,28 @@ async function runRpcQuery(timeoutMs = 30_000) {
 
 try {
   console.log("[pi-local] list models through real extension")
-  const list = await runPi(["-e", EXT_PATH, "--list-models"], 20_000)
+  modelListRequestCount = 0
+  const list = await runPi(["--no-extensions", "-e", EXT_PATH, "--list-models"], 20_000)
   assert.equal(list.code, 0, list.stderr)
   assert.match(list.stdout, /commandcode/)
   assert.match(list.stdout, /deepseek\/deepseek-v4-flash/)
+  assert.match(list.stdout, /Qwen\/Qwen3\.7-Max/)
+  assert.equal(modelListRequestCount, 1)
 
   console.log("[pi-local] print mode through real extension and mock API")
   requestCount = 0
   const print = await runPi(
-    ["-e", EXT_PATH, "-p", "say mock token", "--provider", "commandcode", "--model", TEST_MODEL],
+    [
+      "--no-extensions",
+      "-e",
+      EXT_PATH,
+      "-p",
+      "say mock token",
+      "--provider",
+      "commandcode",
+      "--model",
+      TEST_MODEL,
+    ],
     30_000,
   )
   assert.equal(print.code, 0, print.stderr)
