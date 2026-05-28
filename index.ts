@@ -51,7 +51,7 @@ const MODEL_COSTS: Record<string, CommandCodeModelCost> = {
   "google/gemini-3.1-flash-lite": { input: 0.25, output: 1.5, cacheRead: 0.03, cacheWrite: 0 },
   // 4× usage deal: 75% off (permanent, no expiry)
   "deepseek/deepseek-v4-pro": { input: 0.435, output: 0.87, cacheRead: 0.003625, cacheWrite: 0 },
-  "deepseek/deepseek-v4-flash": { input: 0.14, output: 0.28, cacheRead: 0.01, cacheWrite: 0 },
+  "deepseek/deepseek-v4-flash": { input: 0.14, output: 0.28, cacheRead: 0.028, cacheWrite: 0 },
   "moonshotai/Kimi-K2.6": { input: 0.95, output: 4, cacheRead: 0.16, cacheWrite: 0 },
   "moonshotai/Kimi-K2.5": { input: 0.6, output: 3, cacheRead: 0.1, cacheWrite: 0 },
   "zai-org/GLM-5.1": { input: 1.4, output: 4.4, cacheRead: 0.26, cacheWrite: 0 },
@@ -63,6 +63,8 @@ const MODEL_COSTS: Record<string, CommandCodeModelCost> = {
   // 2× usage deal: 50% off through June 22, 2026
   "Qwen/Qwen3.7-Max": { input: 1.25, output: 3.75, cacheRead: 0.25, cacheWrite: 1.56 },
   "stepfun/Step-3.5-Flash": { input: 0.1, output: 0.3, cacheRead: 0.02, cacheWrite: 0 },
+  "xiaomi/mimo-v2.5-pro": { input: 0, output: 0, cacheRead: 0, cacheWrite: 0 },
+  "xiaomi/mimo-v2.5": { input: 0, output: 0, cacheRead: 0, cacheWrite: 0 },
 }
 
 const streamCommandCode = createStreamCommandCode({
